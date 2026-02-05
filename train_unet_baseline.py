@@ -107,8 +107,23 @@ def train(args):
     train_ds = NpyPairDataset(os.path.join(args.data, 'train'))
     val_ds   = NpyPairDataset(os.path.join(args.data, 'val'))
 
-    train_ld = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=0)
-    val_ld   = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=0)
+    pin_memory = args.pin_memory or (device.type == 'cuda')
+    train_ld = DataLoader(
+        train_ds,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=args.num_workers > 0,
+    )
+    val_ld = DataLoader(
+        val_ds,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=args.num_workers > 0,
+    )
 
     model = UNet(in_ch=5, out_ch=1, base=args.base).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
@@ -119,18 +134,27 @@ def train(args):
     wait = 0
     train_hist: List[float] = []
     val_hist: List[float] = []
+    scaler = torch.amp.GradScaler('cuda') if (args.amp and device.type == 'cuda') else None
 
     for epoch in range(1, args.epochs+1):
         model.train()
         run_loss, seen = 0.0, 0
         for X, Y in train_ld:
-            X = X.to(device)
-            Y = Y.to(device)
+            X = X.to(device, non_blocking=pin_memory)
+            Y = Y.to(device, non_blocking=pin_memory)
             opt.zero_grad()
-            pred = model(X)
-            loss = loss_fn(pred, Y)
-            loss.backward()
-            opt.step()
+            if scaler is not None:
+                with torch.amp.autocast('cuda'):
+                    pred = model(X)
+                    loss = loss_fn(pred, Y)
+                scaler.scale(loss).backward()
+                scaler.step(opt)
+                scaler.update()
+            else:
+                pred = model(X)
+                loss = loss_fn(pred, Y)
+                loss.backward()
+                opt.step()
             run_loss += float(loss.item()) * X.size(0)
             seen += X.size(0)
         tr_loss = run_loss / max(1, seen)
@@ -189,5 +213,8 @@ if __name__ == '__main__':
     ap.add_argument('--base', type=int, default=32)
     ap.add_argument('--patience', type=int, default=10)
     ap.add_argument('--cpu', action='store_true')
+    ap.add_argument('--num-workers', type=int, default=0, help='DataLoader workers (0=main thread only; 2–4 often faster on GPU)')
+    ap.add_argument('--pin-memory', action='store_true', help='Pin memory for faster GPU transfer (recommended with CUDA)')
+    ap.add_argument('--amp', action='store_true', help='Use automatic mixed precision (faster, less VRAM; RTX 4060 recommended)')
     args = ap.parse_args()
     train(args)

@@ -482,7 +482,7 @@ def main():
     ap.add_argument('--ckpt', default=os.path.join('ML_CHECKPOINTS','best.pt'))
     ap.add_argument('--out', default='ML_EVAL')
     ap.add_argument('--batch-size', type=int, default=16)
-    ap.add_argument('--base', type=int, default=32)
+    ap.add_argument('--base', type=int, default=48, help='U-Net base channels (must match trained checkpoint, e.g. 48)')
     ap.add_argument('--cpu', action='store_true')
     ap.add_argument('--bins', type=int, default=50)
     ap.add_argument('--hist-samples', type=int, default=12, help='number of random samples to save histograms for')
@@ -497,12 +497,14 @@ def main():
     ap.add_argument('--save-predictions', action='store_true', help='save normalized predictions for each test sample')
     ap.add_argument('--predictions-dir', default=None, help='where to store saved predictions (default: <out>/predictions)')
     ap.add_argument('--no-mean-table', action='store_true', help='disable writing per-sample mean stress table')
+    ap.add_argument('--split', default='test', choices=('train', 'val', 'test'), help='which split to evaluate on (default: test; use val if test is empty)')
     args = ap.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() and not args.cpu else 'cpu')
     os.makedirs(args.out, exist_ok=True)
 
-    test_ds = NpyPairDataset(os.path.join(args.data, 'test'))
+    split_dir = os.path.join(args.data, args.split)
+    test_ds = NpyPairDataset(split_dir)
     test_ld = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
     model = UNet(in_ch=5, out_ch=1, base=args.base).to(device)
@@ -512,13 +514,13 @@ def main():
 
     mae, rmse = evaluate_test(model, test_ld, device)
 
-    metrics = {'test_mae': float(mae), 'test_rmse': float(rmse)}
-    with open(os.path.join(args.out, 'test_metrics.json'), 'w', encoding='utf-8') as f:
+    metrics = {f'{args.split}_mae': float(mae), f'{args.split}_rmse': float(rmse)}
+    with open(os.path.join(args.out, f'{args.split}_metrics.json'), 'w', encoding='utf-8') as f:
         json.dump(metrics, f, indent=2)
-    with open(os.path.join(args.out, 'test_metrics.csv'), 'w', encoding='utf-8') as f:
-        f.write('test_mae,test_rmse\n')
+    with open(os.path.join(args.out, f'{args.split}_metrics.csv'), 'w', encoding='utf-8') as f:
+        f.write(f'{args.split}_mae,{args.split}_rmse\n')
         f.write(f"{mae:.8f},{rmse:.8f}\n")
-    print(f"Test MAE {mae:.6f} | RMSE {rmse:.6f}")
+    print(f"{args.split.upper()} MAE {mae:.6f} | RMSE {rmse:.6f}")
 
     # optional mapping for exact labels-based boundaries
     sample_to_seed = _load_sample_to_seed_map(args.metadata_csv)

@@ -1,0 +1,24 @@
+#
+# Minimal Python dependencies for tANN-viscoplasticity_solver
+# (training, evaluation, HDF5 extraction, visualization, DAMASK input export)
+#
+
+numpy>=1.23
+matplotlib>=3.7
+h5py>=3.8
+PyYAML>=6.0
+
+# ML
+torch>=2.1
+
+# Video/IO
+imageio>=2.31
+imageio-ffmpeg>=0.4.9
+
+# Optional-but-used in some analysis scripts (has fallback if missing)
+scipy>=1.10
+
+# Optional (only needed if you want to run `export_geom.py` via DAMASK's Python API).
+# NOTE: On Windows + very new Python versions, DAMASK's dependency `vtk` may not have wheels.
+# If you hit install issues, skip DAMASK and still run training/eval fine.
+# damask>=3.0

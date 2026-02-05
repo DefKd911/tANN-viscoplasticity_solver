@@ -1,0 +1,98 @@
+# Numerical parameters for DAMASK
+
+
+solver:
+  grid:
+    N_staggered_iter_max: 8        
+    N_cutback_max: 50              
+
+    damage:
+      N_iter_max: 100
+      eps_abs_phi: 1.0e-2
+      eps_rel_phi: 1.0e-6
+      phi_min: 1.0e-6
+
+    thermal:
+      N_iter_max: 100
+      eps_abs_T: 1.0e-2
+      eps_rel_T: 1.0e-6
+
+    mechanical:
+      N_iter_min: 1
+      N_iter_max: 120             
+      eps_abs_div(P): 1.0e-2
+      eps_rel_div(P): 5.0e-2
+      eps_abs_P: 1.0e3
+      eps_rel_P: 1.0e-3
+      eps_abs_curl(F): 1.0e-9
+      eps_rel_curl(F): 1.0e-3
+      alpha: 1.0
+      beta: 1.0
+      update_gamma: false
+      # NGMRES is Jacobian-free; do NOT use -snes_linesearch_type bt (BT requires Jacobian).
+      PETSc_options: -snes_type ngmres -snes_ngmres_anderson -snes_linesearch_type basic -snes_rtol 1e-5 -ksp_rtol 1e-5
+
+    FFT:
+      memory_efficient: true
+      divergence_correction: size+grid
+      derivative: continuous
+      FFTW_plan_mode: FFTW_MEASURE
+      FFTW_timelimit: -1.0
+
+  mesh:
+    N_cutback_max: 8               
+    N_staggered_iter_max: 8        
+    p_s: 2
+    p_i: 2
+    bbarstabilization: false
+
+    mechanical:
+      N_iter_max: 100              
+      eps_abs_div(P): 1.0e-6       
+      eps_rel_div(P): 1.0e-2       
+
+  Marc:
+    unit_length: 1.0
+
+homogenization:
+  mechanical:
+    RGC:
+      eps_abs_P: 1.0e+4
+      eps_rel_P: 1.0e-3
+      eps_abs_max: 1.0e+10
+      eps_rel_max: 1.0e+2
+      Delta_a: 1.0e-7
+      relevant_mismatch: 1.0e-5
+      viscosity_exponent: 1.0
+      viscosity_modulus: 0.0
+      dot_a_ref: 1.0e-3
+      dot_a_max: 1.0
+      Delta_V_max: 1.0e-5
+      Delta_V_modulus: 1.0e+12
+      Delta_V_exponent: 5.0
+
+phase:
+  mechanical:
+    r_cutback_min: 1.0e-3
+    r_cutback: 0.25
+    r_increase: 1.5
+    eps_rel_state: 1.0e-7
+    N_iter_state_max: 20
+
+    plastic:
+      r_linesearch_Lp: 0.5
+      eps_rel_Lp: 1.0e-5
+      eps_abs_Lp: 1.0e-6
+      N_iter_Lp_max: 100
+      f_update_jacobi_Lp: 1
+      integrator_state: FPI
+
+    eigen:
+      r_linesearch_Li: 0.5
+      eps_rel_Li: 1.0e-6
+      eps_abs_Li: 1.0e-8
+      N_iter_Li_max: 60   
+      f_update_jacobi_Li: 1
+
+generic:
+  random_seed: 0

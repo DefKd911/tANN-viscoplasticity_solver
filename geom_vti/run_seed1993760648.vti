@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<VTKFile type="ImageData" version="0.1" byte_order="LittleEndian" header_type="UInt32" compressor="vtkZLibDataCompressor">
+  <ImageData WholeExtent="0 64 0 64 0 1" Origin="0 0 0" Spacing="1.5625e-7 1.5625e-7 0.000001" Direction="1 0 0 0 1 0 0 0 1">
+    <FieldData>
+      <Array type="String" Name="comments" NumberOfTuples="0" format="binary">
+        AAAAAACAAAAAAAAA
+      </Array>
+    </FieldData>
+  <Piece Extent="0 64 0 64 0 1">
+    <PointData>
+    </PointData>
+    <CellData>
+      <DataArray type="Int32" Name="material" format="binary" RangeMin="0" RangeMax="9">
+        AQAAAACAAAAAQAAAwwEAAA==eF7t0EFOAzEQRcEhEAL3vzBCgh2T6rZ77Emwpbd2179u2/b+AL0kyrzrT/p/djL3+s+8gbzLX+M/6wbyVvrPuIG8z+yX9Qj/mTaQ9Sj/WTaQ9Zn9clZscM8/ewMZl/94/8wNZBzln7GBfCr65F7+ORvIp6JP5hkbyBYp+uRd/vEbyBYt8mSdsYFc0SJPzr1eD0yuaJEn5/KP91dtEHlyLv8cf8UGkSfn8s/z924QeXIu/1z/0RvIufzz/ZfNztH+2+a7W7vsJOso/+2PZFJ75t4N9GSN+lt2kLViAz1ZM3ZtIVc22av98u4lR0//3a8N9GTutY/w39tAT+5e+9k3kP2R/Hsb3Hsj7CP9370lGuUftYG8Gb882XR7RfJG/bK0pNt7k3W2/8gN5Mz4ZehJjpZkzPh1f2+yZJNPjfR/HpB86tf9gWRTcrQkW6SIPdood6Vfpp50f2+yRZKhNxl6ki2S7u9Nhtbkiqb7e5OjNbmi6f6KZGlJrmi6vSJZssmUSbdXJE82mTLp9orkySZTJt1elUyZZMqku6uSKZo82XR3VXJFkyeb7q5MtkjyZNPNlckWSZ5surky2ZQsLX0BHpxGtg==
+      </DataArray>
+    </CellData>
+  </Piece>
+  </ImageData>
+</VTKFile>

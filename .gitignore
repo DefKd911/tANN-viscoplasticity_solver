@@ -1,0 +1,71 @@
+# --- Virtual environments ---
+BTP/
+.venv/
+venv/
+env/
+
+# --- Python cache / build ---
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+
+# --- Cursor / local tooling ---
+.virtual_documents/
+
+# --- Large generated simulation + ML artifacts (do not commit) ---
+simulation_results/
+ML_DATASET/
+ML_CHECKPOINTS/
+ML_EVAL/
+per_grain_analysis/
+material_yaml_fixed/
+material_yaml/
+geom_vti/
+
+# DAMASK / HDF5 outputs (extra safety if folders change)
+*.hdf5
+*.h5
+*.sta
+
+# Generated media / plots
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.mp4
+*.avi
+*.mov
+
+# Large arrays / intermediate data
+*.npy
+*.npz
+
+# Archives / dumps
+*.zip
+*.7z
+*.tar
+*.tar.gz
+
+# --- Logs ---
+*.log
+REsults.txt

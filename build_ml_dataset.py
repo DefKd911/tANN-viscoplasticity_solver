@@ -208,10 +208,11 @@ def normalize_channels(E_map, nu_map, xi0_map, h0_map, sigma_vm_t, sigma_vm_tp1)
 
 # --------------------------- main build ---------------------------
 
-def build_dataset(n_train: int = 800, n_val: int = 100, n_test: int = 0, max_seeds: int = 900):
+def build_dataset(n_train: int = 800, n_val: int = 100, n_test: int = 0, max_seeds: int = 900, test_hdf5_dir: str = None):
     """
     Build ML_DATASET with deterministic seed split.
     Default: use first 900 seeds -> 800 train, 100 val, 0 test (test prepared later).
+    If test_hdf5_dir is set, test seeds are read from that folder (separate test HDF5).
     """
     os.makedirs(OUT_DIR, exist_ok=True)
     for split in ["train", "val", "test"]:
@@ -219,18 +220,26 @@ def build_dataset(n_train: int = 800, n_val: int = 100, n_test: int = 0, max_see
         os.makedirs(os.path.join(OUT_DIR, split, "outputs"), exist_ok=True)
     os.makedirs(os.path.join(OUT_DIR, "metadata"), exist_ok=True)
 
-    # Collect seeds and split deterministically
+    # Train/val: from main HDF5_DIR
     h5_files = sorted(glob.glob(os.path.join(HDF5_DIR, "seed*.hdf5")))
     all_seeds = [os.path.basename(p).replace('.hdf5','') for p in h5_files]
     seeds = all_seeds[:max_seeds] if max_seeds else all_seeds
     n = len(seeds)
     n_train = min(n_train, n)
     n_val = min(n_val, max(0, n - n_train))
-    n_test = min(n_test, max(0, n - n_train - n_val))
     train_seeds = seeds[:n_train]
     val_seeds = seeds[n_train:n_train + n_val]
-    test_seeds = seeds[n_train + n_val:n_train + n_val + n_test]
-    print(f"[INFO] HDF5 seeds available: {len(all_seeds)}; using {n} -> train={len(train_seeds)}, val={len(val_seeds)}, test={len(test_seeds)}", flush=True)
+    # Test: from test_hdf5_dir if provided, else from main pool
+    if test_hdf5_dir and os.path.isdir(test_hdf5_dir):
+        test_h5_files = sorted(glob.glob(os.path.join(test_hdf5_dir, "seed*.hdf5")))
+        test_seeds = [os.path.basename(p).replace('.hdf5','') for p in test_h5_files]
+        n_test = len(test_seeds)
+        print(f"[INFO] Train/val from {HDF5_DIR}; test from {test_hdf5_dir} ({n_test} seeds)", flush=True)
+    else:
+        n_test = min(n_test, max(0, n - n_train - n_val))
+        test_seeds = seeds[n_train + n_val:n_train + n_val + n_test]
+        test_hdf5_dir = None
+    print(f"[INFO] train={len(train_seeds)}, val={len(val_seeds)}, test={len(test_seeds)}", flush=True)
     print("[INFO] Building samples (this may take 15-45 min). Progress every 10 seeds...", flush=True)
 
     with open(os.path.join(OUT_DIR, "metadata", "seeds_used.txt"), "w") as f:
@@ -243,9 +252,10 @@ def build_dataset(n_train: int = 800, n_val: int = 100, n_test: int = 0, max_see
 
     sample_idx = 0
 
-    def process_seed(seed_name: str, split: str):
+    def process_seed(seed_name: str, split: str, h5_dir: str = None):
         nonlocal sample_idx
-        h5_path = os.path.join(HDF5_DIR, f"{seed_name}.hdf5")
+        base = h5_dir if h5_dir else HDF5_DIR
+        h5_path = os.path.join(base, f"{seed_name}.hdf5")
         labels_path = find_labels_path(seed_name)
         props_path = find_props_path(seed_name)
 
@@ -315,8 +325,10 @@ def build_dataset(n_train: int = 800, n_val: int = 100, n_test: int = 0, max_see
         process_seed(s, "val")
         if (i + 1) % 10 == 0 or (i + 1) == len(val_seeds):
             print(f"[INFO] Val: {i+1}/{len(val_seeds)} seeds -> {sample_idx} samples", flush=True)
-    for s in test_seeds:
-        process_seed(s, "test")
+    for i, s in enumerate(test_seeds):
+        process_seed(s, "test", h5_dir=test_hdf5_dir)
+        if test_hdf5_dir and ((i + 1) % 10 == 0 or (i + 1) == len(test_seeds)):
+            print(f"[INFO] Test: {i+1}/{len(test_seeds)} seeds -> {sample_idx} samples", flush=True)
 
     increments_log.close()
 
@@ -345,5 +357,6 @@ if __name__ == "__main__":
     parser.add_argument("--val", type=int, default=100, help="Number of seeds for validation")
     parser.add_argument("--test", type=int, default=0, help="Number of seeds for test (0 = prepare later)")
     parser.add_argument("--max-seeds", type=int, default=900, help="Max seeds to use (first N); 0 = use all")
+    parser.add_argument("--test-hdf5-dir", type=str, default=None, help="Folder with test HDF5 only (e.g. simulation_results/test_hdf5_files)")
     args = parser.parse_args()
-    build_dataset(n_train=args.train, n_val=args.val, n_test=args.test, max_seeds=args.max_seeds)
+    build_dataset(n_train=args.train, n_val=args.val, n_test=args.test, max_seeds=args.max_seeds, test_hdf5_dir=args.test_hdf5_dir)

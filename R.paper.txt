@@ -1,0 +1,637 @@
+An artificial neural network for surrogate modeling of stress
+f
+ields in viscoplastic polycrystalline materials
+1
+Mohammad S. Khorrami1✉, Jaber R. Mianroodi
+Dierk Raabe
+1,2✉, Nima H. Siboni
+1,2, Pawan Goyal3, Bob Svendsen 1,4, Peter Benner3 and
+The purpose of this work is the development of a trained artificial neural network for surrogate modeling of the mechanical
+response of elasto-viscoplastic grain microstructures. To this end, a U-Net-based convolutional neural network (CNN) is trained
+using results for the von Mises stress field from the numerical solution of initial-boundary-value problems (IBVPs) for mechanical
+equilibrium in such microstructures subject to quasi-static uniaxial extension. The resulting trained CNN (tCNN) accurately
+reproduces the von Mises stress field about 500 times faster than numerical solutions of the corresponding IBVP based on spectral
+methods. Application of the tCNN to test cases based on microstructure morphologies and boundary conditions not contained in
+the training dataset is also investigated and discussed.
+npj Computational Materials           (2023) 9:37 ; https://doi.org/10.1038/s41524-023-00991-z
+1234567890():,;
+INTRODUCTION
+In material science and engineering, material modeling is of
+central importance for gaining insight into the interplay between
+material properties, microstructure, and behavior essential for
+material optimization and design. In the case of polycrystalline
+structural materials (e.g., steels), for example, a common
+approach to the modeling of their mechanical behavior is the
+numerical solution of initial-boundary-value problems (IBVPs) for
+mechanical equilibrium, for example, via spectral or finite
+element methods (e.g., refs. 1–7). Unfortunately, such methods
+are computationally quite expensive, especially at high resolu
+tion or “fidelity” (e.g., refs. 8–10). As such, alternative approaches
+to the modeling of complex polycrystalline and polyphase
+materials and their behavior under mechanical loads are the
+focus of current research.
+Among existing alternatives to the currently used solvers,
+perhaps the most prominent ones are those based on artificial
+neural networks (ANNs) and machine learning (ML) (e.g., ref. 11).
+Development of corresponding models is based in particular on
+the fitting of ANN parameters to data via constrained optimiza
+tion, i.e., ANN training, yielding a trained ANN (tANN). Except for a
+few early works (e.g., refs. 12,13), most such “surrogate” models
+based on tANNs have been introduced in the last 4 years (e.g.,
+refs. 14–18). The data employed for training and testing can be
+experimental, empirical, or synthetic in nature. An example of the
+latter are results from the numerical solution of IVBPs based on
+physical models. In the “data-driven” case, training is based on
+such data alone. Going beyond this, one can employ physical
+relations (e.g., constitutive relations) on which the data are based
+as additional training constraints. In the case of physics-informed
+neural networks (PINN) (e.g., ref. 19), the data are the initial and
+boundary conditions of an IBVP, and the ANN is used to
+approximate a least-squares-based (numerical) solution of the
+IBVP (e.g., ref. 20). Recent reviews of applications in the field of
+continuum mechanics and material modeling include, for
+example, ref. 21. In the current work, attention is focused on the
+data-driven approach. The data are obtained from the numerical
+solution of a BVP for quasi-static mechanical equilibrium based on
+viscoplastic material modeling of grains in a heterogeneous
+polycrystalline ensemble.
+A number of data-driven approaches have been proposed for
+applications in solid mechanics. For example, Yang et al.22 trained
+a conditional generative adversarial network (cGAN) to reproduce
+stress and strain fields in strained isotropic elastic two-phase
+composites. Mianroodi et al.23 trained a U-Net-based convolu
+tional neural network (CNN) using results for the von Mises stress
+for grain microstructures consisting of isotropic elastic and ideal
+elastoplastic grains subject to uniaxial extension. More recently,
+Rashid et al.24 introduced a neural-operator-based approach, the
+Fourier Neural Operator (FNO)25,26, in particular for the surrogate
+modeling of stress and strain in heterogeneous composites. The
+U-Net-based CNN and FNO-based ANN have been compared
+recently by Kapoor et al.27 in the context of surrogate modeling of
+stress fields in heterogeneous elastoplastic solids.
+In the current work, a U-Net-based CNN is trained to output the
+von Mises stress field σvM in heterogeneous periodic microstruc
+tures consisting of inelastic grains subject to uniaxial extension.
+More specifically, the constitutive behavior of each grain is modeled
+via J2 elasto-viscoplasticity with linear isotropic hardening. Results
+from the numerical solution of BVPs for quasi-static mechanical
+equilibrium in periodic unit cells based on this grain behavior and
+spectral numerical solution methods (e.g., refs. 1,2,4,7) are employed
+to train the CNN. For brevity, this is referred to as the “reference
+model” (RM) in this work. In the “Results” section, results for σvM and
+its average
+σvM over the unit cell U of the grain microstructure
+obtained from the trained CNN (tCNN) are presented and compared
+with corresponding results from the RM. In particular, these include
+the dependence of the tCNN on details of the training dataset and
+training such as (i) the number of grains in the microstructure, and
+(ii) the range of material properties chosen for each grain. In
+addition, the performance of the tCNN for (i) microstructure
+morphologies (e.g., matrix-inclusion), and (ii) extension levels, not
+1Microstructure Physics and Alloy Design, Max-Planck-Institut für Eisenforschung, Düsseldorf, Germany. 2Ergodic Labs, Lohmühlenstraße 65, 12435 Berlin, Germany.
+3Computational Methods in Systems and Control Theory, Max Planck Institute for Dynamics of Complex Technical Systems, Magdeburg, Germany. 4Material Mechanics, RWTH
+Aachen University, Aachen, Germany. ✉email: m.khorrami@mpie.de; j.mianroodi@mpie.de
+Published in partnership with the Shanghai Institute of Ceramics of the Chinese Academy of Sciences
+M.S. Khorrami et al.
+2
+1234567890():,;
+included in the training dataset, is also investigated and discussed.
+The conclusions and outlook are presented in the “Discussion”
+section. Methods employed in this work are presented in the
+“Methods” section. In particular, this includes a brief summary of the
+model for isotropic J2 viscoplasticity with linear isotropic constitu
+tive response assumed for each grain in the polycrystalline
+ensemble. Data generation, the U-Net-based network architecture
+employed, and network training are also explained and discussed.
+RESULTS
+The purpose of this section is to compare the output of the tCNN
+for the von Mises stress field σvM with corresponding results from
+the RM for selected test cases. As explained in more detail in the
+“Methods” section below, the current CNN is trained with results
+for σvM on unit cells U with 10-grain microstructures and a
+resolution of 64 × 64 pixels subject to uniaxial extension. Training
+(80%) and validation (20%) datasets are based on data from
+1000 such microstructures generated randomly. For simplicity,
+data used for training and testing are based on a single (quasi
+static) extension rate of 1×10−3s−1. Test cases here include
+microstructures with (i) different numbers of grains, (ii) material
+property contrasts in neighboring grains, and (iii) grain morphol
+ogies, which differ from those in the training and validation
+datasets. The tCNN is also tested for extensions larger than those
+in these datasets. Lastly, the computational efficiency of the
+tCNN in comparison to the RM is also discussed. In what follows,
+σRM and σtCNN represent σvM from the RM and tCNN, respectively.
+Test microstructures with a different number of grains
+As stated above, the training dataset is based on 10-grain
+microstructures. For test cases, 64 × 64 pixel unit cells U with 5 and
+20 grains are considered here. Each corresponding test dataset
+consists of 50 microstructures. The mean absolute error (MAE) for
+these as based on σtCNN−σRM is compared with the MAE of the
+training dataset in Table 1. Note that the MAE increases with
+decreasing grain size (i.e., increasing number of grains in a unit cell
+of constant size) and the concomitant increase in the number of
+grain boundaries. As discussed in more detail below, these
+interfaces are regions of maximum error in σtCNN.
+Example results for 5- and 20-grain test microstructures, and
+for a 10-grain training/validation microstructure, are shown
+in Figs. 1–3.
+As mentioned above and shown in Figs. 1–3 (b, bottom),
+∣σtCNN − σRM∣ is maximal at grain boundaries and triple junctions
+where spatial variations in the stress field are largest and pixel
+resolution is lowest. In particular, the former is due to contrasts
+among material properties across grain boundaries. Maximum
+error at grain boundaries has been observed as well in the
+previous work (e.g., 23). As can be seen in Figs. 1–3 (b, bottom), the
+spatial extent of the maximum value of the measure ∣σtCNN−σRM∣
+increases with increasingF11 and decreasing average grain size
+(i.e., increased number of grains) in U.
+Test microstructures with different material property
+distributions
+Training and validation data are based on 10-grain microstructures
+in which material property values for the grains are selected
+Table 1. MAE for test datasets based on 5- and 20-grain
+microstructures and for the training dataset based on 10-grain
+microstructures.
+Number of grains
+MAE (MPa)
+5
+1.578
+npj Computational Materials (2023)   37 
+10
+1.733
+20
+1.869
+randomly from the ranges in Table 3. To obtain test data, random
+distributions of E, ν, ξ0, h0 have been chosen from subsets of the
+ranges in Table 3, i.e., E ∈ [50, 300] GPa, ν∈[0.2, 0.4], ξ0 ∈ [50, 300]
+MPa, and h0∈[0,50]GPa. In particular, the four cases
+Case 1
+E 2 ½50;75∪½275;300;
+ξ0 2 ½50;75∪½275;300;
+Case 2 E 2 ½75;100∪½250;275;
+ξ0 2 ½75;100∪½250;275;
+Case 3 E 2 ½100;125∪½225;250;
+ξ0 2 ½100;125∪½225;250;
+Case 4 E 2 ½125;150∪½200;225;
+ξ0 2 ½125;150∪½200;225;
+ν 2 ½0:2;0:22∪½0:38;0:4;
+h0 2 ½0;5∪½45;50;
+ν 2 ½0:22;0:24∪½0:36;0:38;
+h0 2 ½5;10∪½40;45;
+ν 2 ½0:24;0:26∪½0:34;0:36;
+h0 2 ½10;15∪½35;40;
+ν 2 ½0:26;0:28∪½0:32;0:34;
+h0 2 ½15;20∪½30;35;
+(1)
+are considered. Note the decrease in property contrast in going
+from Case 1 to Case 4. This is reflected in the MAEs of the
+corresponding test datasets shown in Table 2. Note the decrease
+in MAE with decreasing contrast in material properties. For
+example, the contrast in E is at least 215GPa in Case 1, and
+145GPa in Case 4.
+Example results for Case 1 and Case 3 are shown in Figs. 4 and 5,
+respectively.
+Note the slight difference in the grain shape distributions in
+Figs. 4 and 5.
+As noted above, since the material properties in each grain are
+homogeneous, the contrast in the property distributions is also
+related to the contrast in material properties at grain boundaries
+and triple junctions. In comparison to the results in Figs. 1–3 (b,
+bottom) for ∣σtCNN −σRM∣ in the case that material properties values
+are chosen from the ranges in Table 3, note the increase in
+∣σtCNN −σRM∣ in Fig. 4b (bottom: up to 100MPa) and Fig. 5b (bottom:
+up to 80MPa) due to the larger contrast, especially in the former
+case. This is also true for the relative error shown in Figs. 4cand5c.
+The figure indicates that the results from the tCNN in Case 3 (with a
+maximum error of 2%) are more accurate than Case 1 in which the
+maximum error is around 5% as shown in Fig. 4c. Training with a
+larger dataset in this case would result in a reduction of such errors
+and better agreement with the RM.
+Test microstructures with different morphologies
+In this subsection, the tCNN is applied to grain and microstructure
+morphologies not included in the training dataset. These take the
+form of a single inclusion embedded in a matrix material. Inclusions
+of circular and square form are investigated. For each, 50 test results
+are generated based on a random choice of material properties from
+the ranges in Table 3. Examples of these are shown in Figs. 6 and 7.
+Analogous to the case of grain boundaries and triple junctions
+in the polycrystalline cases in Figs. 1–3 (b, bottom), ∣σtCNN − σRM∣
+is largest at the sharp matrix–inclusion (MI) interface where the
+contrast in material properties is greatest and pixel resolution is
+the lowest.
+Note the maximum in ∣σtCNN−σRM∣ at the MI interface in the
+circular case (Fig. 6b(bottom))atF11 ¼ 1:001notpresentat the
+MI interface in the square case (Fig. 7b(bottom)).This isdueto
+the fact that (in contrast to the latter system) the former system
+is still elastic at F11 ¼ 1:001, as implied by the unit cell stress
+deformation results in Fig. 6c and the larger initial resistance
+stress ξ0 of the circular inclusion and corresponding contrast at
+the MI interface (Fig. 6a). For comparable contrasts in material
+properties at the (in particular sharp) interfaces of the circular
+and square inclusions with the matrix, one expects the largest
+stress concentration at the corners of the latter, and so the
+largest values of ∣σtCNN − σRM∣ over the extension history. This is
+also reflected by the fact that the MAE of the test dataset for the
+circular inclusion case (1.42 MPa) is slightly lower than in the
+square inclusion case (1.58 MPa).
+Published in partnership with the Shanghai Institute of Ceramics of the Chinese Academy of Sciences
+M.S. Khorrami et al.
+3
+1234567890():,;
+σRM (blue curve),
+Fig. 1 Five-grain test microstructure subject to uniaxial extension along the horizontal axis. a Young’s modulus E, Poisson’s ratio ν, initial
+f
+low resistance ξ0, linear isotropic hardening modulus h0. b Results for σRM (above), σtCNN (middle), ∣σtCNN −σRM∣ (below) (all MPa), at different
+F11. c
+σtCNN (green points), and relative error (red triangles) given by 100ð
+σtCNN 
+σRMÞ=
+σRM versusF11.
+σRM (blue curve),
+Fig. 2 Ten-grain test microstructure subject to uniaxial extension along the horizontal axis. a Young’s modulus E, Poisson’s ratio ν, initial
+f
+low resistance ξ0, linear isotropic hardening modulus h0. b Results for σRM (above), σtCNN (middle), ∣σtCNN −σRM∣ (below) (all MPa), at different
+F11. c
+σtCNN (green points), and relative error (red triangles) given by 100ð
+σtCNN 
+σRMÞ=
+Extension histories not in the training dataset
+The training data is based in particular on results for σRM
+corresponding to uniaxial extension of the unit cell up to
+F11 ¼ 1:004. Since σvM is an input to the network, the tCNN can
+be used to calculate σvM for values larger than those in the
+training data, corresponding to unit cell uniaxial extension beyond
+that represented by the training data. A typical maximum is just
+σRM versusF11.
+above 500MPa (see, for example, Fig. 11, bottom right). Results for
+this are shown in Fig. 8.
+Note the significant increase in ∣σtCNN − σRM∣ in Fig. 8b (bottom)
+and in the corresponding relative error in Fig. 8c (red triangles)
+aboveF11 ¼ 1:0065.
+Figure 8c shows the corresponding stress–strain curve for
+further loading. According to this curve, the error notably
+Published in partnership with the Shanghai Institute of Ceramics of the Chinese Academy of Sciences
+npj Computational Materials (2023)   37 
+M.S. Khorrami et al.
+4
+Fig. 3 Twenty-grain test microstructure subject to uniaxial extension along the horizontal axis. a Young’s modulus E, Poisson’s ratio ν,
+initial flow resistance ξ0, linear isotropic hardening modulus h0. b Results for σRM (above), σtCNN (middle), ∣σtCNN −σRM∣ (below) (all MPa), at
+differentF11. c
+σRM (blue curve),
+σtCNN (green points), and relative error (red triangles) given by 100ð
+Table 2. MAE for test datasets based on the material property
+distributions in Eq. (1).
+Case
+MAE (MPa)
+1 2 3 4
+3.662
+increases for values of
+1.925
+1.519
+1.265
+σvM greater than 500MPa. One reason for
+this is very little data in the training data for such values. This can
+be seen for example in Fig. 11 (below right), which displays the
+distribution of pixel values for σvM at
+F11 ¼ 1:004. As shown, only
+0.084% of the pixels in the whole training dataset have a von
+Mises stress level above 500 MPa.
+Computational efficiency
+We consider next the time required to calculate the von Mises
+stress field based on the RM and the tCNN. Recall that the former
+is based on the numerical solution of BVPs for quasi-static
+mechanical equilibrium in periodic unit cells employing spectral
+numerical solution methods (e.g., refs. 1,2,4,7). The corresponding
+results for the RM are obtained using the DAMASK simulation
+package5 (see next section). The calculations are carried out on a
+single core of an Intel® Core™ i9900K clocked at 3.60GHz. On this
+basis, the run time of DAMASK for a single training simulation
+averaged over 50 training simulations is approximately 75 s, and
+the corresponding run time for the tCNN is about 0.15s. As such,
+the tCNN is about 500 faster than the RM for the training case. Of
+course, this difference depends on the details of the training data,
+e.g., on the chosen resolution of 64×64 pixels. For finer
+resolutions, the difference increases significantly.
+DISCUSSION
+In this work, a U-Net-based CNN has been trained to calculate the
+von Mises stress field in metallic polycrystals or composites in
+which the mechanical behavior of the grains is modeled by
+npj Computational Materials (2023)   37 
+σtCNN 
+σRMÞ=
+σRM versusF11.
+J2 elasto-viscoplasticity with linear isotropic hardening. Data for
+training, validation, and testing were generated via numerical
+solution of the corresponding periodic boundary-value problems
+for quasi-static mechanical equilibrium on grain microstructure
+unit cells via spectral methods. Data sets for testing of the
+resulting trained CNN (tCNN) are based on the (i) number of
+grains, (ii) distribution of material properties, (iii) grain morphol
+ogies, and (iv) applied unit cell extension.
+For the 64×64 pixel resolution of the microstructure employed,
+calculation of the von Mises stress field σvM with the resulting
+tCNN is up to 500 times faster than with the RM. Increasing the
+resolution would result in an even larger difference in computa
+tional time. On the other hand, in contrast to the RM, the accuracy
+of the tCNN is limited to (i) the range of the training data as well as
+(ii) uniaxial extension.
+The current approach can be extended and further developed in
+a number of directions. These include for example (i) output of all
+components of the stress field, (ii) training for different deformation
+and loading conditions, or (iii) training for multiple rates of
+deformation and/or loading. As well, training can be based on
+more sophisticated “physics-informed” loss functions (accounting,
+for example, for mechanical equilibrium), or on more sophisticated
+“physics-encoded” network architectures. This represents work in
+progress to be reported on in the future.
+METHODS
+RM: J2 viscoplasticity with isotropic hardening
+As discussed in the introduction, data for the training and testing of
+the ANN are obtained from the numerical solution of a boundary
+value problem for quasi-static mechanical equilibrium based on
+viscoplastic material modeling of grain behavior in a grain
+microstructure. In the current context of isothermal and quasi
+static conditions, these include in particular mechanical equilibrium
+divP ¼ 0 interms of the first Piola–Kirchhoff stress P. In the context
+of the viscoplastic decomposition F=FeFp of the deformation
+gradient F, the linear elastic relation Se=λ(I⋅Ee)+2μEe⋅Ee is
+Published in partnership with the Shanghai Institute of Ceramics of the Chinese Academy of Sciences
+M.S. Khorrami et al.
+5
+Fig. 4 Case 1 (high-contrast) test microstructure subject to uniaxial extension along the horizontal axis. a Young’s modulus E, Poisson’s
+ratio ν, initial flow resistance ξ0, linear isotropic hardening modulus h0. b Results for σRM (above), σtCNN (middle), ∣σtCNN − σRM∣ (below) (all MPa),
+at differentF11. c
+σRM (blue curve),
+σtCNN (green points), and relative error (red triangles) given by 100ð
+σtCNN 
+σRMÞ=
+σRM versusF11.
+Fig. 5 Case 3 (low-contrast) test microstructure subject to uniaxial extension along the horizontal axis. a Young’s modulus E, Poisson’s
+ratio ν, initial flow resistance ξ0, linear isotropic hardening modulus h0. b Results for σRM (above), σtCNN (middle), ∣σtCNN − σRM∣ (below) (all MPa),
+at differentF11. c
+σRM (blue curve),
+σtCNN (green points), and relative error (red triangles) given by 100ð
+σtCNN 
+Table 3. Material property ranges used for generating the dataset.
+E (GPa)
+Minimum
+Maximum
+50
+300
+ν ξ0 (MPa) h0 (GPa)
+0.2
+0.4
+50
+300
+0
+50
+σRMÞ=
+σRM versusF11.
+assumed between the elastic second Piola-Kirchhoff stress
+S and the elastic Green strain Ee ¼1
+2ðFT
+eFe IÞ; note that
+P ¼FeSeF T
+p . In the following, the Lame constants with λ=Eν/
+((1 +ν)(1 −2ν)) and μ=E/(2(1+ν)) are determined in terms of
+the Young’s modulus E and the Poisson ratio ν. The evolution of Fp
+Published in partnership with the Shanghai Institute of Ceramics of the Chinese Academy of Sciences
+npj Computational Materials (2023)   37 
+M.S. Khorrami et al.
+6
+Fig. 6 Round inclusion test microstructure subject to uniaxial extension along the horizontal axis. a Young’s modulus E, Poisson’s ratio ν,
+initial flow resistance ξ0, linear isotropic hardening modulus h0. b Results for σRM (above), σtCNN (middle), ∣σtCNN −σRM∣ (below) (all MPa), at
+differentF11. c
+σRM (blue curve),
+σtCNN (green points), and relative error (red triangles) given by 100ð
+σtCNN 
+σRMÞ=
+σRM versusF11.
+Fig. 7 Square inclusion test microstructure subject to uniaxial extension along the horizontal axis. a Young’s modulus E, Poisson’s ratio ν,
+initial flow resistance ξ0, linear isotropic hardening modulus h0. b Results for σRM (above), σtCNN (middle), ∣σtCNN −σRM∣ (below) (all MPa), at
+differentF11. c
+σRM (blue curve),
+σtCNN (green points), and relative error (red triangles) given by 100ð
+σtCNN 
+is determined by the J2 flow rule _ FpF 1
+p ¼_γpSdev
+e =jSdev
+is the rate of equivalent plastic shear, and Sdev
+e j, where _γp
+σRMÞ=
+σRM versusF11.
+hardening, with ξ0 the initial flow resistance, and h0 the isotropic
+hardening modulus.
+e
+γp ¼ _γ0ðjSdev
+the deviatoric
+part of Se. The viscoplastic (i.e., rate-dependent28) form
+_
+e j=ξÞn0 for the evolution of γp is determined by the
+typical material inelastic shear rate _γ0, the power-law exponent
+n0, and the flow resistance ξ(γp)=ξ0+h0γp for linear isotropic
+npj Computational Materials (2023)   37 
+The viscoplastic model is implemented in the simulation
+software toolkit DAMASK5. This toolkit is also used for numerical
+solution of the corresponding quasi-static mechanical boundary
+value problem on periodic grain microstructures based on spectral
+(i.e., Fourier) methods.
+Published in partnership with the Shanghai Institute of Ceramics of the Chinese Academy of Sciences
+M.S. Khorrami et al.
+7
+Fig. 8 Extension histories test microstructure subject to uniaxial extension along the horizontal axis. a Young’s modulus E, Poisson’s ratio
+ν, initial flow resistance ξ0, linear isotropic hardening modulus h0. b Results for σRM (above), σtCNN (middle), ∣σtCNN − σRM∣ (below) (all MPa), at
+differentF11. c
+σRM (blue curve),
+σtCNN (green points), and relative error (red triangles) given by 100ð
+σtCNN 
+σRMÞ=
+σRM versusF11.
+Fig. 9 Example of a randomly generated grain microstructure and corresponding material property distribution. The latter include
+Young’s modulus E, Poisson’s ratio ν, the initial flow resistance ξ0, and the linear isotropic hardening modulus h0.
+Fig. 10 Schematic illustration of the tANN for calculation of the local von Mises stress based on J2 viscoplasticity with linear isotropic
+hardening. a Young’s modulus E, Poisson’s ratio ν, initial flow resistance ξ0, and linear isotropic hardening modulus h0 are material property
+distributions as input of the tANN. σt
+vM denotes the von Mises stress distribution at time step t.
+Data generation
+Material parameters for each grain in the microstructure include E,
+ν, ξ0, h0, _γ0, and n0. For simplicity, _γ0 ¼ 10 3 s−1 and n0=20 are
+assumed the same for all grains. Values for the remaining material
+properties of each grain are chosen randomly from a range of
+values shown in Table 3. The training dataset consists of 1000
+grain microstructures based on 10 grains and random material
+property distributions. Grain morphologies and microstructures
+are generated randomly via Voronoi tessellation. An example is
+shown in Fig. 9.
+Published in partnership with the Shanghai Institute of Ceramics of the Chinese Academy of Sciences
+npj Computational Materials (2023)   37 
+M.S. Khorrami et al.
+8
+Fig. 11 Distributions of values and corresponding mean value (in red) for selected input quantities in the training data. Top left: Young’s
+modulus E. Top right: σRM forF11 ¼ 1:001. Bottom left: σRM forF11 ¼ 1:002. Bottom right: σRM forF11 ¼ 1:004.
+Fig. 12 U-Net-based ANN architecture adopted in this work. Depicted are the number of channels as well as the size of the images in each
+layer. Employed are two-dimensional (2D) separable convolution with 9 ×9 kernel, ReLU activation, batch normalization, 2D max pooling, and
+upsampling with bilinear interpolation, all as implemented in TensorFlow30. All weights and biases are initialized via the Glorot algorithm31.
+See text for discussion.
+As done, for example, in ref. 23, the ANN input consists of the
+distribution of these material properties in the unit cell/
+microstructure as well as results for the scalar von Mises stress
+p
+f
+ield σvM ¼ ffiffiffiffiffiffiffiffiffiffiffiffiffiffiffiffiffiffiffiffiffiffiffiffiffiffiffiffi
+3Tdev Tdev=2
+(Cauchy stress T ¼ PFT=detF)dur
+ANN (tANN) outputs σvM at time step t+Δt (i.e., σtþΔt
+vM ). This is
+depicted in Fig. 10.
+In the current case of purely bulk behavior of grain
+microstructures on the unit cell U, fields f ¼
+f þ~ f on the unit
+ing extension. Given the material property distribution
+(E, ν, h0, ξ0) andσvM at time step t (i.e. σt
+vM), then, the trained
+npj Computational Materials (2023)   37 
+cell U are additively split into mean
+f and fluctuation ~ f parts, with
+f :¼ vðUÞ 1R
+Ufdv and v(U)≔∫Udv. In this context, deformation
+Published in partnership with the Shanghai Institute of Ceramics of the Chinese Academy of Sciences
+“boundaryconditions”onUtaketheformofprescribedvaluesfor
+themean deformation gradient FðtÞ. For the current case of
+uniaxialextension, theCartesian/matrixform
+FðtÞ
+F11ðtÞ 0 0
+0 1 0
+0 0 1
+2
+6 4
+3
+7 5; F11ðtÞ¼1þ _ F11ð0Þt; (2)
+of FðtÞ applies. For simplicity, data for trainingand testingare
+limited to a single extension rate _ F11ð0Þ¼1´10 3s−1, i.e., to
+quasi-static extension. Based on this extension rate, results
+obtainedup to F11ð4Þ¼1:004 are employedas trainingdata,
+and thosebetween this valueandF11ð8Þ¼1:008areused for
+testingthetCNN.
+ThepixeldistributionsofvaluesforYoung’smodulusEandσvM
+fordifferentvaluesofF11 inthetrainingdataareshowninFig.11.
+Thepixeldistributionsoftheotherinputmaterialpropertiesare
+similar.Asevident, thepixeldistributionofσvMateachvalueof
+F11 is quasi-normal in character, as expected for randomly
+distributedmaterialpropertyvalues.
+Neuralnetworktype,architecture,andtraining
+ThecurrentANNisbasedontheU-Net convolutional typeand
+architecture introducedby Ronneberger et al.29. As shownby
+Mianroodi et al.23, this architecture is suitable for surrogate
+modeling the stress field in solidmechanics problems, and in
+particular thevonMisesstressσvM. Fig. 12schematicallydepicts
+theU-Netnetworkarchitecture, (referredtoinref. 29asU-Netdue
+toitsshape).
+Network input consistsof64×64pixel images forE, ν, ξ0, h0,
+andσvM,andthenetworkoutputsone64×64pixel imageforσvM.
+Asusual,bothinputandoutputarenormalizedto1. Inaddition,
+32filters capture themain features fromthe input images. As
+showninthefigure, fourtypesofoperationareperformedinthe
+U-Net,namely,separabletwo-dimensional(2D)convolutionwitha
+kernel sizeof 9, batchnormalization, 2Dmaxpooling, and2D
+upsamplingwithbilinear interpolation.
+Forthetrainingprocess,Adamoptimizationisemployedwitha
+learning rate of 0.001 and amomentumof 0.9. As discussed
+above, the loss function for training, validation, and testing is
+givenbythemeanabsoluteerror (MAE)basedonthedifference
+σtCNN−σRM.TensorFlow30isusedtosetupandtrainthenetwork.
+As usual, thedataset is divided into training (80%) and (20%)
+testingsubsets.Trainingisbasedon500epochsandhasanMAE
+of1.733MPa; thecorrespondingMAEforthevalidationdataset is
+1.743MPa.Nosignofoverfittingwasobserved.
+DATAAVAILABILITY
+Thedataemployed inthecurrentworkcanbeobtainedfromthecorresponding
+authoruponrequest.
+CODEAVAILABILITY
+Thecodeemployed inthecurrentworkcanbeobtainedfromthecorresponding
+authoruponrequest.
+Received:2September2022;Accepted:21February2023;
+REFERENCES
+1. Shanthraj, P., Eisenlohr, P., Diehl,M. &Roters, F. Numerically robust spectral
+methodsforcrystalplasticitysimulationsofheterogeneousmaterials. Int.J.Plast.
+66,31–45(2015).
+2.Willot, F. Fourier-based schemes for computing themechanical response of
+compositeswithaccuratelocalfields.C.R.Mécanique343,232–245(2015).
+3. Schneider, M.,Merkert, D. &Kabel, M. FFT-basedhomogenization formicro
+structuresdiscretizedby linearhexahedral elements. Int. J. NumericalMethods
+Eng.109,1461–1489(2017).
+4. Lucarini,S.&Segurado,J.DBFFT:adisplacementbasedFFTapproachfornon-linear
+homogenizationof themechanicalbehavior. Int. J.Eng.Sci.144,103131(2019).
+5. Roters, F.etal.DAMASK–TheDüsseldorfAdvancedMaterialSimulationKit for
+modelingmulti-physics crystal plasticity, thermal, anddamagephenomena
+fromthesinglecrystal uptothecomponent scale. Comput.Mater. Sci. 158,
+420–478(2019).
+6. Lebensohn,R.A.&Rollett,A.D.Spectralmethodsfor full-fieldmicromechanical
+modellingofpolycrystallinematerials.Comput.Mater.Sci.173,109336(2020).
+7. Khorrami,M.,Mianroodi, J. R., Shanthraj, P.&Svendsen, B.Developmentand
+comparisonof spectral algorithms fornumericalmodelingof thequasi-static
+mechanical behavior of inhomogeneousmaterials. Preprint at arXivhttps://
+arxiv.org/abs/2009.03762(2020).
+8. Roters, F. etal.Overviewof constitutive laws, kinematics, homogenizationand
+multiscalemethods incrystalplasticityfinite-elementmodeling: theory, experi
+ments, applications.ActaMater.58,1152–1211(2010).
+9. Roters, F. et al. DAMASK: theDüsseldorfAdvancedMaterial SimulationKit for
+studyingcrystalplasticityusinganFEbasedoraspectralnumerical solver.Proc.
+IUTAM3,3–10(2012).
+10. Diehl,M. et al. Identifyingstructure–property relationships throughDREAM. 3D
+representative volume elements andDAMASK crystal plasticity simulations: an
+integratedcomputationalmaterialsengineeringapproach.JOM69,848–855(2017).
+11. Stoll,A.&Benner, P.Machine learningformaterial characterizationwithan
+application for predictingmechanical properties. GAMM-Mitteilungen 44,
+e202100003(2021).
+12.Wu,X.NeuralNetwork-BasedMaterialModeling.PhDthesis,UniversityofIllinoisat
+Urbana-Champaign(1991).
+13. Haj-Ali,R.,Kim,H.-K.,Koh,S.W.,Saxena,A.&Tummala,R.Nonlinearconstitutive
+models fromnanoindentationtestsusingartificialneuralnetworks. Int. J. Plast.
+24,371–396(2008).
+14. Ali,U.,Muhammad,W., Brahme, A., Skiba,O. & Inal, K. Applicationof artificial
+neuralnetworks inmicromechanics forpolycrystallinemetals. Int. J. Plast. 120,
+205–219(2019).
+15.Mayer,A.E.,Krasnikov,V.S.&Pogorelko,V.V.DislocationnucleationinAlsingle
+crystal at shear parallel to (111) plane: molecular dynamics simulations and
+nucleationtheorywithartificialneuralnetworks. Int. J.Plast.139,102953(2021).
+16. Pandya, K. S., Roth, C. C. &Mohr, D. Strain rateand temperaturedependent
+fractureofaluminumalloy7075:experimentsandneuralnetworkmodeling. Int.
+J.Plast.135,102788(2020).
+17. Settgast,C.,Hütter,G.,Kuna,M.&Abendroth,M.Ahybridapproachtosimulate
+thehomogenizedirreversibleelastic–plasticdeformationsanddamageoffoams
+byneuralnetworks. Int. J.Plast.126,102624(2020).
+18.Mianroodi,J.R.,Rezaei,S.,Siboni,N.H.,Xu,B.-X.&Raabe,D.Losslessmulti-scale
+constitutiveelasticrelationswithartificial intelligence.npjComput.Mater.8,67
+(2022).
+19. Raissi,M.,Perdikaris,P.&Karniadakis,G. E.Physics-informedneuralnetworks: a
+deep learning framework for solving forwardand inverseproblems involving
+nonlinearpartialdifferentialequations. J.Comput.Phys.378,686–707(2019).
+20. Lagaris, I.E.,Likas,A.&Fotiadis,D. I.Artificialneuralnetworksforsolvingordinary
+andpartialdifferentialequations. IEEETrans.NeuralNetw.9,987–1000(1998).
+21. Bock,F.E.etal.Areviewoftheapplicationofmachinelearninganddatamining
+approaches incontinuummaterialsmechanics. Front.Mater.6,110(2019).
+22. Yang,Z.,Yu,C.-H.&Buehler,M.J.Deeplearningmodeltopredictcomplexstress
+andstrainfields inhierarchical composites. Sci.Adv.7,eabd7416(2021).
+23.Mianroodi, J. R.,H. Siboni,N.&Raabe,D. Teachingsolidmechanics toartificial
+intelligence-afastsolverforheterogeneousmaterials.npjComput.Mater.7,1–10
+(2021).
+24. Rashidi,M.M., Pittie, T., Chakraborty, S. &Krishnan, N.M. A. Learning the
+stress-strainfieldsindigitalcompositesusingFourierneuraloperator. IScience
+25, 105452(2022).
+25. Li, Z. etal. Fourierneuraloperator forparametricpartialdifferential equations.
+PreprintatarXivhttps://arxiv.org/abs/2010.08895(2020)
+26. Kovachki, N., Lanthaler, S. &Mishra, S. Onuniversal approximationanderror
+boundsforFourierneuraloperators. J.Mach. Learn.Res.22,1–76(2021)
+27. Kapoor,S.,Mianroodi, J.R.,Khorrami,M.,Siboni,N.S.&Svendsen,B.Comparison
+of twoartificialneuralnetworks trainedfor thesurrogatemodelingof stress in
+materiallyheterogeneouselastoplasticsolids. PreprintatarXivhttps://arxiv.org/
+abs/2210.16994(2022)
+28. Peirce,D.,Asaro,R. J.&Needleman,A.Material ratedependenceandlocalized
+deformationincrystallinesolids.ActaMetall.31,1951–1976(1983).
+29. Ronneberger,O., Fischer,P.&Brox,T.U-net: convolutionalnetworks forbiome
+dical imagesegmentation. InMedical ImageComputingandComputer-Assisted
+Intervention234–241(Springer,2015).
+M.S.Khorramietal.
+9
+PublishedinpartnershipwiththeShanghai InstituteofCeramicsof theChineseAcademyofSciences npjComputationalMaterials(20s41524-023-00991-z (2).pdf

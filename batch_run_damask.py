@@ -11,6 +11,8 @@ Usage:
     python batch_run_damask.py --max 200
     python batch_run_damask.py --all
     python batch_run_damask.py --max 100 --parallel
+    # Test data only (separate folder):
+    python batch_run_damask.py --seeds-file test_seeds_to_simulate.txt --hdf5-dir simulation_results/test_hdf5_files
 """
 
 import os
@@ -152,10 +154,10 @@ def cleanup_remaining_outputs():
 
 def run_single_simulation(args):
     """Wrapper function for parallel processing."""
-    geom_file, material_file, output_name = args
-    return run_damask_simulation(geom_file, material_file, output_name)
+    geom_file, material_file, output_name, out_hdf5_dir = args
+    return run_damask_simulation(geom_file, material_file, output_name, out_hdf5_dir=out_hdf5_dir)
 
-def run_damask_simulation(geom_file, material_file, output_name, material_errors_list=None):
+def run_damask_simulation(geom_file, material_file, output_name, material_errors_list=None, out_hdf5_dir=None):
     """
     Run DAMASK simulation for a single geometry/material pair.
     
@@ -164,7 +166,9 @@ def run_damask_simulation(geom_file, material_file, output_name, material_errors
         material_file: Path to .yaml material file  
         output_name: Base name for output files (without extension)
         material_errors_list: List to track material model errors (optional)
+        out_hdf5_dir: If set, save HDF5 here; else use OUTPUT_DIR/HDF5_DIR
     """
+    hdf5_dest_dir = out_hdf5_dir if out_hdf5_dir else os.path.join(OUTPUT_DIR, HDF5_DIR)
     # Clean up any potential leftover files first
     geom_base = os.path.splitext(os.path.basename(geom_file))[0]
     leftover_patterns = [
@@ -222,9 +226,9 @@ def run_damask_simulation(geom_file, material_file, output_name, material_errors
         restart_hdf5 = [f for f in hdf5_files if 'restart' in f.lower()]
         
         if hdf5_files:
-            # Move primary (non-restart) HDF5 to hdf5_files directory
+            # Move primary (non-restart) HDF5 to target directory
             for hdf5_file in primary_hdf5:
-                dest_path = os.path.join(OUTPUT_DIR, HDF5_DIR, f"{output_name}.hdf5")
+                dest_path = os.path.join(hdf5_dest_dir, f"{output_name}.hdf5")
                 try:
                     shutil.move(hdf5_file, dest_path)
                     print(f"[SUCCESS] HDF5: {hdf5_file} -> {dest_path}")
@@ -334,10 +338,30 @@ def main():
     parser = argparse.ArgumentParser(description="Run DAMASK simulations and dump HDF5 files.")
     parser.add_argument("--max", type=int, default=None, help="Max number of simulations to run (skips already-done)")
     parser.add_argument("--all", action="store_true", help="Run all geometries (same as --max with total count)")
+    parser.add_argument("--seeds-file", type=str, default=None, help="Run only seeds listed in file (one seed per line, e.g. for test set)")
+    parser.add_argument("--hdf5-dir", type=str, default=None, help="Save HDF5 to this folder (e.g. simulation_results/test_hdf5_files for separate test data)")
     parser.add_argument("--parallel", action="store_true", help="Use parallel processing (faster)")
     args = parser.parse_args()
+
+    seeds_filter = None
+    if args.seeds_file:
+        if not os.path.isfile(args.seeds_file):
+            print(f"[ERROR] Seeds file not found: {args.seeds_file}")
+            return
+        with open(args.seeds_file, "r") as f:
+            seeds_filter = set(line.strip() for line in f if line.strip())
+        print(f"[INFO] --seeds-file: will run only {len(seeds_filter)} seeds from {args.seeds_file} (skipping existing HDF5)")
+
+    # Optional separate folder for HDF5 (e.g. test data)
+    effective_hdf5_dir = args.hdf5_dir if args.hdf5_dir else os.path.join(OUTPUT_DIR, HDF5_DIR)
+    if args.hdf5_dir:
+        os.makedirs(effective_hdf5_dir, exist_ok=True)
+        print(f"[INFO] --hdf5-dir: saving HDF5 to {effective_hdf5_dir}")
     
-    if args.all:
+    if seeds_filter is not None:
+        # Run only seeds from file; no max limit, no prompt
+        max_simulations = len(geom_files)
+    elif args.all:
         max_simulations = len(geom_files)
         print(f"[INFO] --all: will run up to {max_simulations} simulations (skipping existing HDF5)")
     elif args.max is not None:
@@ -383,14 +407,17 @@ def main():
     # Prepare simulation tasks
     simulation_tasks = []
     for geom_file in geom_files:
-        # Stop if we've reached the maximum number of simulations
-        if len(simulation_tasks) >= max_simulations:
-            break
-            
         # Extract seed from geometry filename (e.g., run_seed123456.vti -> seed123456)
         base_name = os.path.splitext(os.path.basename(geom_file))[0]  # run_seed123456
         seed_name = base_name.replace("run_", "")  # seed123456
-        
+
+        # If --seeds-file: only include seeds from that file
+        if seeds_filter is not None and seed_name not in seeds_filter:
+            continue
+        # Else: stop if we've reached the maximum number of simulations
+        if seeds_filter is None and len(simulation_tasks) >= max_simulations:
+            break
+            
         # Find matching material file
         material_file = os.path.join(MATERIAL_DIR, f"material_{seed_name}.yaml")
         
@@ -398,15 +425,16 @@ def main():
             print(f"[SKIP] No matching material file for {geom_file}")
             continue
         
-        # Check if output already exists
-        output_file = os.path.join(OUTPUT_DIR, HDF5_DIR, f"{seed_name}.hdf5")
+        # Check if output already exists (in the chosen HDF5 dir)
+        output_file = os.path.join(effective_hdf5_dir, f"{seed_name}.hdf5")
         if os.path.exists(output_file):
             print(f"[SKIP] Output already exists for {seed_name}")
             continue
         
-        simulation_tasks.append((geom_file, material_file, seed_name))
+        simulation_tasks.append((geom_file, material_file, seed_name, effective_hdf5_dir))
     
-    print(f"[INFO] Prepared {len(simulation_tasks)} simulation tasks (target: {max_simulations})")
+    target_str = str(len(seeds_filter)) if seeds_filter else str(max_simulations)
+    print(f"[INFO] Prepared {len(simulation_tasks)} simulation tasks (target: {target_str})")
     
     # Process simulations
     processed = 0
@@ -425,6 +453,7 @@ def main():
             for future in as_completed(future_to_task):
                 task = future_to_task[future]
                 seed_name = task[2]
+                # task = (geom_file, material_file, seed_name, effective_hdf5_dir)
                 
                 try:
                     result = future.result()
@@ -448,8 +477,8 @@ def main():
     else:
         # Sequential processing
         for task in simulation_tasks:
-            geom_file, material_file, seed_name = task
-            result = run_damask_simulation(geom_file, material_file, seed_name, material_errors)
+            geom_file, material_file, seed_name, out_hdf5_dir = task
+            result = run_damask_simulation(geom_file, material_file, seed_name, material_errors, out_hdf5_dir=out_hdf5_dir)
             processed += 1
             
             if result:

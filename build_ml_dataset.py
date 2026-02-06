@@ -18,12 +18,14 @@ ML_DATASET/
   test/...
   metadata/{seeds_used.txt, normalization.json, increments_map.csv}
 
-Normalization (applied to inputs+target):
+Normalization (applied to inputs+target); matches paper Table 3 and "normalized to 1":
 - E:   (E-50e9)/250e9
 - nu:  (nu-0.2)/0.2
 - xi0: (xi0-50e6)/250e6
 - h0:  h0/50e9
-- sigma_vM: (sigma_vM[MPa]/1000.0)
+- sigma_vM: (sigma_vM[Pa]/1e6)/1000  (so MAE in MPa = normalized MAE × 1000)
+
+For paper replication use --max-grains 10 and 80/20 split (e.g. --train 800 --val 200).
 """
 import os
 import glob
@@ -167,6 +169,24 @@ def find_props_path(seed_name: str) -> str:
     raise FileNotFoundError(f"Props file not found for {seed_name} in {PROPS_DIR}")
 
 
+def get_grain_count(seed_name: str) -> int:
+    """Return number of grains for this seed (from props or labels). Used for --max-grains filter."""
+    try:
+        props_path = find_props_path(seed_name)
+        raw = np.load(props_path, allow_pickle=True)
+        if getattr(raw, "ndim", 0) == 0 and isinstance(raw.item(), dict):
+            d = raw.item()
+            return len(np.atleast_1d(d["E"]))
+        return int(raw.shape[0])
+    except FileNotFoundError:
+        pass
+    labels_path = find_labels_path(seed_name)
+    labels = np.load(labels_path, allow_pickle=True)
+    if getattr(labels, "ndim", 0) == 0:
+        labels = labels.item()
+    return int(len(np.unique(labels)))
+
+
 def per_pixel_maps(labels: np.ndarray, props: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Broadcast per-grain props (Gx4 [E,nu,xi0,h0]) to per-pixel maps using labels (64x64).
     Returns E_map, nu_map, xi0_map, h0_map as (64,64) arrays.
@@ -208,11 +228,12 @@ def normalize_channels(E_map, nu_map, xi0_map, h0_map, sigma_vm_t, sigma_vm_tp1)
 
 # --------------------------- main build ---------------------------
 
-def build_dataset(n_train: int = 800, n_val: int = 100, n_test: int = 0, max_seeds: int = 900, test_hdf5_dir: str = None):
+def build_dataset(n_train: int = 800, n_val: int = 100, n_test: int = 0, max_seeds: int = 900, test_hdf5_dir: str = None, max_grains: Optional[int] = None):
     """
     Build ML_DATASET with deterministic seed split.
     Default: use first 900 seeds -> 800 train, 100 val, 0 test (test prepared later).
     If test_hdf5_dir is set, test seeds are read from that folder (separate test HDF5).
+    If max_grains is set (e.g. 10 for paper replication), only seeds with that many grains are included.
     """
     os.makedirs(OUT_DIR, exist_ok=True)
     for split in ["train", "val", "test"]:
@@ -224,6 +245,21 @@ def build_dataset(n_train: int = 800, n_val: int = 100, n_test: int = 0, max_see
     h5_files = sorted(glob.glob(os.path.join(HDF5_DIR, "seed*.hdf5")))
     all_seeds = [os.path.basename(p).replace('.hdf5','') for p in h5_files]
     seeds = all_seeds[:max_seeds] if max_seeds else all_seeds
+
+    if max_grains is not None:
+        kept = []
+        for s in seeds:
+            try:
+                if get_grain_count(s) == max_grains:
+                    kept.append(s)
+            except Exception:
+                pass
+        n_before = len(seeds)
+        seeds = kept
+        print(f"[INFO] Filtering to {max_grains}-grain microstructures: {len(seeds)}/{n_before} seeds kept", flush=True)
+        if len(seeds) == 0:
+            raise ValueError(f"No seeds with exactly {max_grains} grains. Run verify_10grain.py to check.")
+
     n = len(seeds)
     n_train = min(n_train, n)
     n_val = min(n_val, max(0, n - n_train))
@@ -233,6 +269,15 @@ def build_dataset(n_train: int = 800, n_val: int = 100, n_test: int = 0, max_see
     if test_hdf5_dir and os.path.isdir(test_hdf5_dir):
         test_h5_files = sorted(glob.glob(os.path.join(test_hdf5_dir, "seed*.hdf5")))
         test_seeds = [os.path.basename(p).replace('.hdf5','') for p in test_h5_files]
+        if max_grains is not None:
+            kept = []
+            for s in test_seeds:
+                try:
+                    if get_grain_count(s) == max_grains:
+                        kept.append(s)
+                except Exception:
+                    pass
+            test_seeds = kept
         n_test = len(test_seeds)
         print(f"[INFO] Train/val from {HDF5_DIR}; test from {test_hdf5_dir} ({n_test} seeds)", flush=True)
     else:
@@ -358,5 +403,6 @@ if __name__ == "__main__":
     parser.add_argument("--test", type=int, default=0, help="Number of seeds for test (0 = prepare later)")
     parser.add_argument("--max-seeds", type=int, default=900, help="Max seeds to use (first N); 0 = use all")
     parser.add_argument("--test-hdf5-dir", type=str, default=None, help="Folder with test HDF5 only (e.g. simulation_results/test_hdf5_files)")
+    parser.add_argument("--max-grains", type=int, default=None, help="Only include seeds with this many grains (e.g. 10 for paper replication)")
     args = parser.parse_args()
-    build_dataset(n_train=args.train, n_val=args.val, n_test=args.test, max_seeds=args.max_seeds, test_hdf5_dir=args.test_hdf5_dir)
+    build_dataset(n_train=args.train, n_val=args.val, n_test=args.test, max_seeds=args.max_seeds, test_hdf5_dir=args.test_hdf5_dir, max_grains=args.max_grains)

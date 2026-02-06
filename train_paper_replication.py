@@ -5,13 +5,15 @@ Train U-Net to replicate Khorrami et al. (npj Comput. Mater. 2023) setup.
 Paper: "An artificial neural network for surrogate modeling of stress fields
 in viscoplastic polycrystalline materials"
 
-Exact paper settings:
-- Architecture: U-Net, 32 filters, 9×9 separable 2D convolution, batch norm,
-  ReLU, 2D max pooling, bilinear upsampling. Glorot (Xavier) init.
+Exact paper settings (same data preparation and training strategy as paper):
+- Data: 10-grain microstructures only; 64×64; E, ν, ξ0, h0, σvM normalized to 1 (Table 3 ranges).
+  Build with: build_ml_dataset.py --train 800 --val 200 --max-seeds 1000 --max-grains 10
+- Architecture: U-Net, 32 filters, 9×9 separable 2D convolution (depthwise 9×9 + pointwise 1×1),
+  batch norm, ReLU, 2D max pooling, bilinear upsampling. Glorot (Xavier) init.
 - Optimizer: Adam lr=0.001, momentum 0.9 (beta1=0.9).
 - Loss: MAE (L1).
-- Training: 500 epochs; 80% train / 20% val. Paper reports train MAE 1.733 MPa, val 1.743 MPa.
-- Input: (E, ν, ξ0, h0, σvM(t)) 64×64; Output: σvM(t+Δt) 64×64; normalized to 1.
+- Training: 500 epochs; 80% train / 20% val. No early stopping. Paper: train MAE 1.733 MPa, val 1.743 MPa.
+- MAE in MPa = val_mae (normalized) × 1000.
 
 Usage:
   python train_paper_replication.py --data ML_DATASET --out ML_CHECKPOINTS/paper_replication
@@ -52,46 +54,49 @@ def _glorot_init(m):
             nn.init.zeros_(m.bias)
 
 
-class PaperDoubleBlock(nn.Module):
-    """Two separable 9×9 blocks (paper: separable conv + ReLU + BN)."""
+class PaperSepBlock(nn.Module):
+    """Two separable 9×9 blocks as in paper (Fig. 12): depthwise 9×9 + pointwise 1×1, BN, ReLU."""
     def __init__(self, in_ch, out_ch, k=9):
         super().__init__()
         p = k // 2
-        self.conv1 = nn.Conv2d(in_ch, out_ch, k, padding=p, bias=False)
+        # First separable: depthwise 9×9 then pointwise 1×1
+        self.dw1 = nn.Conv2d(in_ch, in_ch, k, padding=p, groups=in_ch, bias=False)
+        self.pw1 = nn.Conv2d(in_ch, out_ch, 1, bias=False)
         self.bn1 = nn.BatchNorm2d(out_ch)
         self.relu1 = nn.ReLU(inplace=True)
-        self.conv2 = nn.Conv2d(out_ch, out_ch, k, padding=p, bias=False)
+        self.dw2 = nn.Conv2d(out_ch, out_ch, k, padding=p, groups=out_ch, bias=False)
+        self.pw2 = nn.Conv2d(out_ch, out_ch, 1, bias=False)
         self.bn2 = nn.BatchNorm2d(out_ch)
         self.relu2 = nn.ReLU(inplace=True)
 
     def forward(self, x):
-        x = self.relu1(self.bn1(self.conv1(x)))
-        x = self.relu2(self.bn2(self.conv2(x)))
+        x = self.relu1(self.bn1(self.pw1(self.dw1(x))))
+        x = self.relu2(self.bn2(self.pw2(self.dw2(x))))
         return x
 
 
 class PaperUNet(nn.Module):
     """
-    U-Net matching paper (Fig. 12): 32 filters, 9×9 convolution, batch norm,
-    max pooling, bilinear upsampling. Input 5 ch, output 1 ch, 64×64.
+    U-Net matching paper (Fig. 12): 32 filters, 9×9 separable 2D convolution,
+    batch norm, max pooling, bilinear upsampling. Input 5 ch, output 1 ch, 64×64.
     """
     def __init__(self, in_ch=5, out_ch=1, base=32):
         super().__init__()
-        # Encoder: 9×9 conv blocks (paper uses separable; we use standard 9×9 for stability)
-        self.down1 = PaperDoubleBlock(in_ch, base, k=9)
+        # Encoder: separable 9×9 blocks (paper: "separable 2D convolution with 9×9 kernel")
+        self.down1 = PaperSepBlock(in_ch, base, k=9)
         self.pool1 = nn.MaxPool2d(2)
-        self.down2 = PaperDoubleBlock(base, base * 2, k=9)
+        self.down2 = PaperSepBlock(base, base * 2, k=9)
         self.pool2 = nn.MaxPool2d(2)
-        self.down3 = PaperDoubleBlock(base * 2, base * 4, k=9)
+        self.down3 = PaperSepBlock(base * 2, base * 4, k=9)
         self.pool3 = nn.MaxPool2d(2)
-        self.bottleneck = PaperDoubleBlock(base * 4, base * 8, k=9)
+        self.bottleneck = PaperSepBlock(base * 4, base * 8, k=9)
         # Decoder: bilinear upsampling (paper)
         self.up3 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
-        self.conv3 = PaperDoubleBlock(base * 8 + base * 4, base * 4, k=9)
+        self.conv3 = PaperSepBlock(base * 8 + base * 4, base * 4, k=9)
         self.up2 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
-        self.conv2 = PaperDoubleBlock(base * 4 + base * 2, base * 2, k=9)
+        self.conv2 = PaperSepBlock(base * 4 + base * 2, base * 2, k=9)
         self.up1 = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
-        self.conv1 = PaperDoubleBlock(base * 2 + base, base, k=9)
+        self.conv1 = PaperSepBlock(base * 2 + base, base, k=9)
         self.outc = nn.Conv2d(base, out_ch, 1)
         self.apply(_glorot_init)
 
@@ -130,7 +135,7 @@ def train(args):
     print("[PAPER REPLICATION] Khorrami et al. npj Comput. Mater. 2023")
     print(f"  Device: {device}")
     print(f"  Epochs: {args.epochs}, lr: {args.lr}, batch_size: {args.batch_size}, MAE loss")
-    print(f"  Architecture: U-Net 32 filters, 9×9 conv, Glorot init, bilinear upsampling")
+    print(f"  Architecture: U-Net 32 filters, 9×9 separable conv, Glorot init, bilinear upsampling")
 
     train_ds = NpyPairDataset(os.path.join(args.data, 'train'))
     val_ds = NpyPairDataset(os.path.join(args.data, 'val'))
@@ -191,7 +196,7 @@ def train(args):
     except Exception as e:
         print(f"Warning: plot failed: {e}")
 
-    print(f"Done. Best val MAE: {best_val:.6f} (paper: train 1.733 MPa, val 1.743 MPa in physical units)")
+    print(f"Done. Best val MAE: {best_val:.6f} (×1000 = {best_val*1000:.2f} MPa; paper val 1.743 MPa)")
 
 
 if __name__ == '__main__':

@@ -12,12 +12,13 @@ Exact paper settings (same data preparation and training strategy as paper):
   batch norm, ReLU, 2D max pooling, bilinear upsampling. Glorot (Xavier) init.
 - Optimizer: Adam lr=0.001, momentum 0.9 (beta1=0.9).
 - Loss: MAE (L1).
-- Training: 500 epochs; 80% train / 20% val. No early stopping. Paper: train MAE 1.733 MPa, val 1.743 MPa.
+- Training: 500 epochs; 80% train / 20% val. No early stopping (paper-exact). Optional --patience for early stop on large data.
 - MAE in MPa = val_mae (normalized) × 1000.
 
 Usage:
   python train_paper_replication.py --data ML_DATASET --out ML_CHECKPOINTS/paper_replication
   python train_paper_replication.py --data ML_DATASET --epochs 500 --lr 0.001 --batch-size 8
+  python train_paper_replication.py --data ML_DATASET --out ML_CHECKPOINTS/paper_replication --patience 15  # early stop to avoid overfitting on large data
 """
 import os
 import glob
@@ -151,6 +152,8 @@ def train(args):
     train_hist: List[float] = []
     val_hist: List[float] = []
     os.makedirs(args.out, exist_ok=True)
+    patience = getattr(args, 'patience', 0)
+    wait = 0
 
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -172,9 +175,16 @@ def train(args):
 
         if val_mae < best_val:
             best_val = val_mae
+            wait = 0
             torch.save({'model': model.state_dict(), 'epoch': epoch, 'val_mae': best_val}, os.path.join(args.out, 'best.pt'))
+        elif patience > 0:
+            wait += 1
+            if wait >= patience:
+                print("Early stopping.")
+                break
 
-    torch.save({'model': model.state_dict(), 'epoch': args.epochs, 'val_mae': best_val}, os.path.join(args.out, 'last.pt'))
+    last_epoch = len(train_hist)
+    torch.save({'model': model.state_dict(), 'epoch': last_epoch, 'val_mae': best_val}, os.path.join(args.out, 'last.pt'))
 
     with open(os.path.join(args.out, 'training_log.csv'), 'w') as f:
         f.write('epoch,train_mae,val_mae\n')
@@ -206,6 +216,7 @@ if __name__ == '__main__':
     ap.add_argument('--epochs', type=int, default=500, help='Paper: 500')
     ap.add_argument('--batch-size', type=int, default=8)
     ap.add_argument('--lr', type=float, default=0.001, help='Paper: 0.001')
+    ap.add_argument('--patience', type=int, default=0, help='Early stopping patience (0 = disabled, paper-exact; e.g. 15 for large data)')
     ap.add_argument('--cpu', action='store_true')
     ap.add_argument('--num-workers', type=int, default=0)
     args = ap.parse_args()

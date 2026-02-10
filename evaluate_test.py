@@ -4,8 +4,12 @@ Evaluate U-Net on ML_DATASET/test and save metrics and qualitative plots.
 
 Usage:
   python evaluate_test.py --data ML_DATASET --ckpt ML_CHECKPOINTS/best.pt --out ML_EVAL --batch-size 16 --base 32
+  # Paper replication checkpoint (9×9 separable U-Net, base 32):
+  python evaluate_test.py --data ML_DATASET --ckpt ML_CHECKPOINTS/paper_replication/best.pt --out ML_EVAL --arch paper
 """
 import os
+# Avoid OpenMP duplicate-library error on Windows (numpy/torch both ship libiomp5md.dll)
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 import glob
 import argparse
 import json
@@ -482,7 +486,8 @@ def main():
     ap.add_argument('--ckpt', default=os.path.join('ML_CHECKPOINTS','best.pt'))
     ap.add_argument('--out', default='ML_EVAL')
     ap.add_argument('--batch-size', type=int, default=16)
-    ap.add_argument('--base', type=int, default=48, help='U-Net base channels (must match trained checkpoint, e.g. 48)')
+    ap.add_argument('--arch', default='unet', choices=('unet', 'paper'), help='unet=baseline 3x3; paper=9x9 separable (paper replication)')
+    ap.add_argument('--base', type=int, default=48, help='U-Net base channels (for unet arch; paper uses 32)')
     ap.add_argument('--cpu', action='store_true')
     ap.add_argument('--bins', type=int, default=50)
     ap.add_argument('--hist-samples', type=int, default=12, help='number of random samples to save histograms for')
@@ -497,6 +502,7 @@ def main():
     ap.add_argument('--save-predictions', action='store_true', help='save normalized predictions for each test sample')
     ap.add_argument('--predictions-dir', default=None, help='where to store saved predictions (default: <out>/predictions)')
     ap.add_argument('--no-mean-table', action='store_true', help='disable writing per-sample mean stress table')
+    ap.add_argument('--metrics-only', action='store_true', help='only compute and print MAE/RMSE (no qualitative plots or histograms)')
     ap.add_argument('--split', default='test', choices=('train', 'val', 'test'), help='which split to evaluate on (default: test; use val if test is empty)')
     args = ap.parse_args()
 
@@ -507,20 +513,30 @@ def main():
     test_ds = NpyPairDataset(split_dir)
     test_ld = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
-    model = UNet(in_ch=5, out_ch=1, base=args.base).to(device)
+    if args.arch == 'paper':
+        from train_paper_replication import PaperUNet
+        model = PaperUNet(in_ch=5, out_ch=1, base=32).to(device)
+    else:
+        model = UNet(in_ch=5, out_ch=1, base=args.base).to(device)
     assert os.path.isfile(args.ckpt), f"Checkpoint not found: {args.ckpt}"
     ck = torch.load(args.ckpt, map_location=device)
     model.load_state_dict(ck['model'])
 
     mae, rmse = evaluate_test(model, test_ld, device)
+    # Normalized MAE × 1000 = MAE in MPa (same as build_ml_dataset sigma scale)
+    mae_mpa = mae * 1000.0
+    rmse_mpa = rmse * 1000.0
 
-    metrics = {f'{args.split}_mae': float(mae), f'{args.split}_rmse': float(rmse)}
+    metrics = {f'{args.split}_mae': float(mae), f'{args.split}_rmse': float(rmse), f'{args.split}_mae_mpa': float(mae_mpa), f'{args.split}_rmse_mpa': float(rmse_mpa)}
     with open(os.path.join(args.out, f'{args.split}_metrics.json'), 'w', encoding='utf-8') as f:
         json.dump(metrics, f, indent=2)
     with open(os.path.join(args.out, f'{args.split}_metrics.csv'), 'w', encoding='utf-8') as f:
-        f.write(f'{args.split}_mae,{args.split}_rmse\n')
-        f.write(f"{mae:.8f},{rmse:.8f}\n")
-    print(f"{args.split.upper()} MAE {mae:.6f} | RMSE {rmse:.6f}")
+        f.write(f'{args.split}_mae,{args.split}_rmse,{args.split}_mae_mpa,{args.split}_rmse_mpa\n')
+        f.write(f"{mae:.8f},{rmse:.8f},{mae_mpa:.4f},{rmse_mpa:.4f}\n")
+    print(f"{args.split.upper()} MAE {mae:.6f} ({mae_mpa:.2f} MPa) | RMSE {rmse:.6f} ({rmse_mpa:.2f} MPa)")
+
+    if args.metrics_only:
+        return
 
     # optional mapping for exact labels-based boundaries
     sample_to_seed = _load_sample_to_seed_map(args.metadata_csv)
